@@ -3,5 +3,5 @@ from . import views
 
 urlpatterns = [
     path('', views.editor_view, name='editor'),
-    path('compile/', views.compile_latex, name='compile_latex'),
+    path('register/', views.register_view, name='register'),
 ]
