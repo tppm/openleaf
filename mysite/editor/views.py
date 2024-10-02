@@ -1,11 +1,64 @@
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login
+from .models import LatexProject, LatexFile
+from django.http import JsonResponse, FileResponse
+from django.core.files.base import ContentFile
+from django.conf import settings
+import subprocess
+import os
+import tempfile
+
 
 @login_required(login_url='login')
-def editor_view(request):
-    return render(request, 'editor/editor.html')
+def project_select_view(request):
+    projects = LatexProject.objects.filter(user=request.user)
+    return render(request, 'editor/project_select.html', {'projects': projects})
+
+@login_required(login_url='login')
+def editor_view(request, project_id):
+    project = get_object_or_404(LatexProject, id=project_id, user=request.user)
+    main_file = project.latex_files.filter(is_main_file=True).first()
+    
+    if main_file:
+        content = main_file.content
+    else:
+        content = r"\documentclass{article}\n\begin{document}\n\nYour content here.\n\n\end{document}"
+        main_file = LatexFile.objects.create(
+            project=project,
+            filename="main.tex",
+            content=content,
+            is_main_file=True
+        )
+    
+    return render(request, 'editor/editor.html', {'project': project, 'content': content})
+
+@login_required(login_url='login')
+def create_project(request):
+    if request.method == 'POST':
+        title = request.POST.get('title', '').strip()
+        if not title:
+            return JsonResponse({'success': False, 'error': 'Project title is required'})
+        
+        project = LatexProject.objects.create(
+            title=title,
+            user=request.user
+        )
+        
+        # Create a main LaTeX file for the project
+        content = r"\documentclass{article}\n\begin{document}\n\nYour content here.\n\n\end{document}"
+        LatexFile.objects.create(
+            project=project,
+            filename=f"{title.replace(' ', '_')}.tex",
+            content=content,
+            is_main_file=True
+        )
+        
+        return JsonResponse({'success': True, 'project_id': project.id})
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request method'})
+
 
 def register_view(request):
     if request.method == 'POST':
@@ -17,3 +70,34 @@ def register_view(request):
     else:
         form = UserCreationForm()
     return render(request, 'editor/register.html', {'form': form})
+
+
+@login_required(login_url='login')
+def compile_latex(request, project_id):
+    project = get_object_or_404(LatexProject, id=project_id, user=request.user)
+    main_file = get_object_or_404(LatexFile, project=project, is_main_file=True)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tex_file_path = os.path.join(tmpdir, main_file.filename)
+        with open(tex_file_path, 'w') as f:
+            f.write(main_file.content)
+
+        try:
+            # Run pdflatex twice to ensure all references are resolved
+            for _ in range(2):
+                subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', tmpdir, tex_file_path], 
+                               check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            pdf_file_path = os.path.splitext(tex_file_path)[0] + '.pdf'
+            if os.path.exists(pdf_file_path):
+                with open(pdf_file_path, 'rb') as f:
+                    response = HttpResponse(f.read(), content_type='application/pdf')
+                    response['Content-Disposition'] = f'inline; filename="{os.path.basename(pdf_file_path)}"'
+                    return response
+            else:
+                return JsonResponse({"error": "Failed to generate PDF"}, status=500)
+
+        except subprocess.CalledProcessError as e:
+            # If pdflatex fails, return an error message
+            error_output = e.stderr.decode('utf-8')
+            return JsonResponse({"error": f"Error generating PDF: {error_output}"}, status=500)

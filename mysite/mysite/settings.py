@@ -76,7 +76,7 @@ TEMPLATES = [
     },
 ]
 
-LOGIN_REDIRECT_URL = 'editor'  # Redirect to home page after login
+LOGIN_REDIRECT_URL = 'project_select'  # Redirect to home page after login
 LOGOUT_REDIRECT_URL = 'login'
 
 WSGI_APPLICATION = 'mysite.wsgi.application'

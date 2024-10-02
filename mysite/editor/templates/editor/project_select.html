@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}Select Project{% endblock %}
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card bg-dark text-light">
+            <div class="card-header">
+                <h2 class="text-center">Your LaTeX Projects</h2>
+            </div>
+            <div class="card-body">
+                {% if projects %}
+                    <ul class="list-group">
+                    {% for project in projects %}
+                        <li class="list-group-item bg-dark">
+                            <a href="{% url 'editor' project.id %}" class="text-light">{{ project.title }}</a>
+                        </li>
+                    {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="text-center">You don't have any projects yet.</p>
+                {% endif %}
+            </div>
+            <div class="card-footer text-center">
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newProjectModal">Create New Project</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New Project Modal -->
+<div class="modal fade" id="newProjectModal" tabindex="-1" aria-labelledby="newProjectModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title" id="newProjectModalLabel">Create New Project</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newProjectForm">
+                    <div class="mb-3">
+                        <label for="projectName" class="form-label">Project Name</label>
+                        <input type="text" class="form-control" id="projectName" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="createProjectBtn">Create Project</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+
+
+{% block extra_body %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const createProjectBtn = document.getElementById('createProjectBtn');
+        const projectNameInput = document.getElementById('projectName');
+        const newProjectModal = new bootstrap.Modal(document.getElementById('newProjectModal'));
+    
+        createProjectBtn.addEventListener('click', function() {
+            const projectName = projectNameInput.value.trim();
+            if (!projectName) {
+                alert('Please enter a project name.');
+                return;
+            }
+    
+            fetch('{% url "create_project" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: 'title=' + encodeURIComponent(projectName)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    newProjectModal.hide();
+                    window.location.href = '{% url "editor" project_id=0 %}'.replace('0', data.project_id);
+                } else {
+                    alert('Error: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while creating the project. Please try again.');
+            });
+        });
+    
+        // Clear the input when the modal is hidden
+        newProjectModal._element.addEventListener('hidden.bs.modal', function () {
+            projectNameInput.value = '';
+        });
+    });
+</script>
+{% endblock %}
