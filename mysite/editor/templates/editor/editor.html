@@ -9,8 +9,8 @@
             <div class="card-header">Documents</div>
             <div class="card-body">
                 <ul class="list-group list-group-flush bg-dark">
-                    {% for doc in documents %}
-                    <li class="list-group-item bg-dark text-light">{{ doc.title }}</li>
+                    {% for file in files %}
+                    <li class="list-group-item bg-dark text-light">{{ file.filename }}</li>
                     {% endfor %}
                 </ul>
             </div>
@@ -23,7 +23,7 @@
                 <input type="text" class="form-control bg-dark text-light" id="documentTitle" placeholder="Document Title">
             </div>
             <div class="card-body">
-                <textarea class="form-control bg-dark text-light" id="latexEditor" rows="15"></textarea>
+                <textarea class="form-control bg-dark text-light" id="latexEditor" rows="15">{{ main_file.content }}</textarea>
             </div>
             <div class="card-footer">
                 <button class="btn btn-outline-light" id="saveBtn">Save</button>
@@ -42,6 +42,7 @@
 
 {% block extra_body %}
 <script>
-    // Add your JavaScript for editor functionality here
+
+
 </script>
 {% endblock %}

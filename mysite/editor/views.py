@@ -19,20 +19,30 @@ def project_select_view(request):
 @login_required(login_url='login')
 def editor_view(request, project_id):
     project = get_object_or_404(LatexProject, id=project_id, user=request.user)
-    main_file = project.latex_files.filter(is_main_file=True).first()
-    
-    if main_file:
-        content = main_file.content
-    else:
-        content = r"\documentclass{article}\n\begin{document}\n\nYour content here.\n\n\end{document}"
+    all_files = project.latex_files.all()
+
+    files_data = [{'id': file.id, 'filename': file.filename, 'content': file.content, 'is_main_file': file.is_main_file} for file in all_files]
+    main_file = next((file for file in files_data if file['is_main_file']), None)
+
+
+    if not main_file:
+        main_file_content = r"\documentclass{article}\n\begin{document}\n\nYour content here.\n\n\end{document}"
         main_file = LatexFile.objects.create(
             project=project,
             filename="main.tex",
-            content=content,
+            content=main_file_content,
             is_main_file=True
         )
+        files_data.append({
+            'id': main_file.id,
+            'filename': main_file.filename,
+            'content': main_file.content, 
+            'is_main_file': True})
     
-    return render(request, 'editor/editor.html', {'project': project, 'content': content})
+    return render(request, 'editor/editor.html', {
+        'project': project, 
+        'files': files_data, 
+        'main_file': main_file or files_data[-1]})
 
 @login_required(login_url='login')
 def create_project(request):
