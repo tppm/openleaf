@@ -2,15 +2,30 @@
 
 {% block title %}LaTeX Editor{% endblock %}
 
+{% block extra_head %}
+<style>
+    .list-group-item {
+        cursor: pointer;
+        transition: background-color 0.3s;
+    }
+    .list-group-item:hover {
+        background-color: #495057 !important;
+    }
+</style>
+{% endblock %}
+
+
 {% block content %}
 <div class="row">
     <div class="col-md-3">
         <div class="card bg-dark text-light mb-3">
             <div class="card-header">Documents</div>
             <div class="card-body">
-                <ul class="list-group list-group-flush bg-dark">
+                <ul id="file-list" class="list-group">
                     {% for file in files %}
-                    <li class="list-group-item bg-dark text-light">{{ file.filename }}</li>
+                        <li class="list-group-item bg-dark text-light" data-file-id="{{ file.id }}">
+                            {{ file.filename }}
+                        </li>
                     {% endfor %}
                 </ul>
             </div>
@@ -20,14 +35,14 @@
     <div class="col-md-9">
         <div class="card bg-dark text-light mb-3">
             <div class="card-header">
-                <input type="text" class="form-control bg-dark text-light" id="documentTitle" placeholder="Document Title">
+                <span id="current-file-name">{{ main_file.filename }}</span>
             </div>
             <div class="card-body">
-                <textarea class="form-control bg-dark text-light" id="latexEditor" rows="15">{{ main_file.content }}</textarea>
+                <textarea id="editor" class="form-control bg-dark text-light" rows="20">{{ main_file.content }}</textarea>
             </div>
             <div class="card-footer">
-                <button class="btn btn-outline-light" id="saveBtn">Save</button>
-                <button class="btn btn-outline-light" id="compileBtn">Compile</button>
+                <button id="save-btn" class="btn btn-primary">Save</button>
+                <button id="compile-btn" class="btn btn-success">Compile</button>
             </div>
         </div>
         <div class="card bg-dark text-light">
@@ -42,7 +57,67 @@
 
 {% block extra_body %}
 <script>
+    $(document).ready(function() {
+        let currentFileId = {{ main_file.id }};
 
+        // File selection
+        $('.list-group-item').click(function() {
+            const fileId = $(this).data('file-id');
+            loadFile(fileId);
+        });
+
+        function loadFile(fileId) {
+            $.ajax({
+                url: `/get_file/${fileId}/`,
+                method: 'GET',
+                success: function(response) {
+                    $('#editor').val(response.content);
+                    $('#current-file-name').text(response.filename);
+                    currentFileId = fileId;
+                },
+                error: function(error) {
+                    console.error('Error loading file:', error);
+                }
+            });
+        }
+
+        // Save button functionality
+        $('#save-btn').click(function() {
+            const content = $('#editor').val();
+            $.ajax({
+                url: `/save_file/${currentFileId}/`,
+                method: 'POST',
+                data: {
+                    content: content,
+                    csrfmiddlewaretoken: '{{ csrf_token }}'
+                },
+                success: function(response) {
+                    alert('File saved successfully!');
+                },
+                error: function(error) {
+                    console.error('Error saving file:', error);
+                }
+            });
+        });
+
+        // Compile button functionality
+        $('#compile-btn').click(function() {
+            $.ajax({
+                url: `/compile/${currentFileId}/`,
+                method: 'POST',
+                data: {
+                    csrfmiddlewaretoken: '{{ csrf_token }}'
+                },
+                success: function(response) {
+                    // Assuming the response contains a URL to the compiled PDF
+                    $('#pdfPreview').html(`<iframe src="${response.pdf_url}" width="100%" height="100%"></iframe>`);
+                },
+                error: function(error) {
+                    console.error('Error compiling LaTeX:', error);
+                }
+            });
+        });
+    });
 
 </script>
 {% endblock %}

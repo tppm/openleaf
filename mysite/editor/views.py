@@ -2,13 +2,15 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login
-from .models import LatexProject, LatexFile
 from django.http import JsonResponse, FileResponse
+from .models import LatexProject, LatexFile
 from django.core.files.base import ContentFile
 from django.conf import settings
 import subprocess
 import os
 import tempfile
+from django.views.decorators.http import require_POST
+
 
 
 @login_required(login_url='login')
@@ -19,30 +21,50 @@ def project_select_view(request):
 @login_required(login_url='login')
 def editor_view(request, project_id):
     project = get_object_or_404(LatexProject, id=project_id, user=request.user)
-    all_files = project.latex_files.all()
+    files = project.latex_files.all()
+    main_file = files.filter(is_main_file=True).first()
 
-    files_data = [{'id': file.id, 'filename': file.filename, 'content': file.content, 'is_main_file': file.is_main_file} for file in all_files]
-    main_file = next((file for file in files_data if file['is_main_file']), None)
 
 
     if not main_file:
-        main_file_content = r"\documentclass{article}\n\begin{document}\n\nYour content here.\n\n\end{document}"
         main_file = LatexFile.objects.create(
             project=project,
             filename="main.tex",
-            content=main_file_content,
+            content=r"\documentclass{article}\n\begin{document}\n\nYour content here.\n\n\end{document}",
             is_main_file=True
         )
-        files_data.append({
-            'id': main_file.id,
-            'filename': main_file.filename,
-            'content': main_file.content, 
-            'is_main_file': True})
+
+
+    context = {
+        'project': project,
+        'files': files,
+        'main_file': main_file
+    }
     
-    return render(request, 'editor/editor.html', {
-        'project': project, 
-        'files': files_data, 
-        'main_file': main_file or files_data[-1]})
+    return render(request, 'editor/editor.html', context)
+
+
+@login_required
+def get_file(request, file_id):
+    file = get_object_or_404(LatexFile, id=file_id, project__user=request.user)
+    return JsonResponse({
+        'id': file.id,
+        'filename': file.filename,
+        'content': file.content,
+    })
+
+@login_required
+@require_POST
+def save_file(request, file_id):
+    file = get_object_or_404(LatexFile, id=file_id, project__user=request.user)
+    content = request.POST.get('content')
+    if content is not None:
+        file.content = content
+        file.save()
+        return JsonResponse({'status': 'success'})
+    return JsonResponse({'status': 'error', 'message': 'No content provided'}, status=400)
+
+
 
 @login_required(login_url='login')
 def create_project(request):
