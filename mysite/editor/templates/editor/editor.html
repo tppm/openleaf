@@ -1,54 +1,115 @@
 {% extends "base.html" %}
-
 {% block title %}LaTeX Editor{% endblock %}
 
 {% block extra_head %}
 <style>
+    body {
+        background-color: #f7f7f7;
+        color: #37352f;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    }
+    .sidebar {
+        background-color: #f7f7f7;
+        border-right: 1px solid #e0e0e0;
+        height: 100vh;
+        padding: 20px;
+    }
+    .sidebar-header {
+        font-weight: 600;
+        font-size: 14px;
+        text-transform: uppercase;
+        color: #6b6b6b;
+        margin-bottom: 10px;
+    }
     .list-group-item {
         cursor: pointer;
-        transition: background-color 0.3s;
+        border: none;
+        padding: 8px 12px;
+        margin-bottom: 4px;
+        border-radius: 3px;
+        transition: background-color 0.2s ease;
+        background-color: transparent;
+        color: #37352f;
     }
     .list-group-item:hover {
-        background-color: #495057 !important;
+        background-color: #eaeaea !important;
     }
+    .list-group-item.active {
+        background-color: #e1e1e1 !important;
+        color: #37352f;
+        font-weight: 500;
+    }
+    #editor {
+        border: none;
+        border-radius: 3px;
+        padding: 20px;
+        font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        background-color: #ffffff;
+        color: #37352f;
+    }
+    .card {
+        border: none;
+        border-radius: 3px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+    }
+    .card-header {
+        background-color: #ffffff;
+        border-bottom: 1px solid #e0e0e0;
+        font-weight: 600;
+    }
+    .btn {
+        border-radius: 3px;
+        font-weight: 500;
+    }
+    #new-document-btn {
+        width: 100%;
+        margin-top: 10px;
+    }
+    #pdf-viewer {
+        width: 100%;
+        height: 800px;
+        border: 1px solid #ccc;
+        overflow: auto;
+    }
+
 </style>
 {% endblock %}
 
-
 {% block content %}
 <div class="row">
-    <div class="col-md-3">
-        <div class="card bg-dark text-light mb-3">
-            <div class="card-header">Documents</div>
-            <div class="card-body">
-                <ul id="file-list" class="list-group">
-                    {% for file in files %}
-                        <li class="list-group-item bg-dark text-light" data-file-id="{{ file.id }}">
-                            {{ file.filename }}
-                        </li>
-                    {% endfor %}
-                </ul>
-            </div>
-        </div>
-        <button class="btn btn-outline-light w-100" id="newDocBtn">New Document</button>
+    <div class="col-md-3 sidebar">
+        <div class="sidebar-header">Documents</div>
+        <ul id="file-list" class="list-group">
+            {% for file in files %}
+                <li class="list-group-item" data-file-id="{{ file.id }}">
+                    {{ file.filename }}
+                </li>
+            {% endfor %}
+        </ul>
+        <button id="new-document-btn" class="btn btn-primary">New Document</button>
     </div>
     <div class="col-md-9">
-        <div class="card bg-dark text-light mb-3">
+        <div class="card mb-3">
             <div class="card-header">
                 <span id="current-file-name">{{ main_file.filename }}</span>
             </div>
             <div class="card-body">
-                <textarea id="editor" class="form-control bg-dark text-light" rows="20">{{ main_file.content }}</textarea>
+                <textarea id="editor" class="form-control" rows="20">{{ main_file.content }}</textarea>
             </div>
             <div class="card-footer">
                 <button id="save-btn" class="btn btn-primary">Save</button>
                 <button id="compile-btn" class="btn btn-success">Compile</button>
             </div>
         </div>
-        <div class="card bg-dark text-light">
-            <div class="card-header">PDF Preview</div>
+        <div class="card">
+            <div class="card-header">
+                PDF Preview
+            </div>
             <div class="card-body">
-                <div id="pdfPreview" style="height: 500px; overflow-y: auto;"></div>
+                <div id="pdf-viewer"></div>
+            </div>
             </div>
         </div>
     </div>
@@ -59,9 +120,13 @@
 <script>
     $(document).ready(function() {
         let currentFileId = {{ main_file.id }};
+        let currentProjectId = {{ project.id }};
+
 
         // File selection
         $('.list-group-item').click(function() {
+            $('.list-group-item').removeClass('active');
+            $(this).addClass('active');
             const fileId = $(this).data('file-id');
             loadFile(fileId);
         });
@@ -103,21 +168,53 @@
         // Compile button functionality
         $('#compile-btn').click(function() {
             $.ajax({
-                url: `/compile/${currentFileId}/`,
+                url: `/compile/${currentProjectId}/`,
                 method: 'POST',
                 data: {
                     csrfmiddlewaretoken: '{{ csrf_token }}'
                 },
-                success: function(response) {
-                    // Assuming the response contains a URL to the compiled PDF
-                    $('#pdfPreview').html(`<iframe src="${response.pdf_url}" width="100%" height="100%"></iframe>`);
+                xhrFields: {
+                    responseType: 'arraybuffer'
                 },
-                error: function(error) {
+                success: function(response) {
+                    const pdfData = new Uint8Array(response);
+                    renderPDF(pdfData);
+                },
+                error: function(xhr, status, error) {
                     console.error('Error compiling LaTeX:', error);
+                    alert('Error compiling LaTeX: ' + xhr.responseText);
                 }
             });
         });
-    });
 
+        function renderPDF(pdfData) {
+            const loadingTask = pdfjsLib.getDocument({data: pdfData});
+            loadingTask.promise.then(function(pdf) {
+                const pageNumber = 1;
+                pdf.getPage(pageNumber).then(function(page) {
+                    const scale = 1.5;
+                    const viewport = page.getViewport({ scale: scale });
+
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+
+                    const renderContext = {
+                        canvasContext: context,
+                        viewport: viewport
+                    };
+
+                    page.render(renderContext);
+
+                    const viewer = document.getElementById('pdf-viewer');
+                    viewer.innerHTML = '';
+                    viewer.appendChild(canvas);
+                });
+            }, function (error) {
+                console.error('Error loading PDF:', error);
+            });
+        }
+    });
 </script>
 {% endblock %}

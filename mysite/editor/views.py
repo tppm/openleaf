@@ -10,6 +10,11 @@ import subprocess
 import os
 import tempfile
 from django.views.decorators.http import require_POST
+from django.http import HttpResponse
+import traceback
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -104,32 +109,65 @@ def register_view(request):
     return render(request, 'editor/register.html', {'form': form})
 
 
-@login_required(login_url='login')
+@login_required
+@require_POST
 def compile_latex(request, project_id):
-    project = get_object_or_404(LatexProject, id=project_id, user=request.user)
-    main_file = get_object_or_404(LatexFile, project=project, is_main_file=True)
+    try:
+        logger.info(f"Starting compilation for project_id: {project_id}")
+        project = LatexProject.objects.get(id=project_id, user=request.user)
+        logger.info(f"Project found: {project.title}")
+        main_file = project.latex_files.get(is_main_file=True)
+        logger.info(f"Main file: {main_file.filename}")
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tex_file_path = os.path.join(tmpdir, main_file.filename)
-        with open(tex_file_path, 'w') as f:
-            f.write(main_file.content)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            logger.info(f"Created temporary directory: {tmpdir}")
 
-        try:
-            # Run pdflatex twice to ensure all references are resolved
-            for _ in range(2):
-                subprocess.run(['pdflatex', '-interaction=nonstopmode', '-output-directory', tmpdir, tex_file_path], 
-                               check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Create images directory
+            images_dir = os.path.join(tmpdir, 'images')
+            os.makedirs(images_dir)
+            logger.info(f"Created images directory: {images_dir}")
 
-            pdf_file_path = os.path.splitext(tex_file_path)[0] + '.pdf'
-            if os.path.exists(pdf_file_path):
-                with open(pdf_file_path, 'rb') as f:
-                    response = HttpResponse(f.read(), content_type='application/pdf')
-                    response['Content-Disposition'] = f'inline; filename="{os.path.basename(pdf_file_path)}"'
-                    return response
+            # Copy all project files to temp directory
+            for file in project.latex_files.all():
+                with open(os.path.join(tmpdir, file.filename), 'w') as f:
+                    f.write(file.content)
+                logger.info(f"Copied file: {file.filename}")
+
+
+            # Copy all project images to images directory
+            for image in project.images.all():
+                with open(os.path.join(images_dir, image.image.name), 'wb') as f:
+                    f.write(image.image.read())
+                logger.info(f"Copied image: {image.image.name}")
+
+            # Run pdflatex
+            logger.info("Starting pdflatex compilation")
+            process = subprocess.run(
+                ['pdflatex', '-interaction=nonstopmode', main_file.filename],
+                cwd=tmpdir,
+                capture_output=True,
+                text=True
+            )
+
+            if process.returncode != 0:
+                logger.error(f"LaTeX compilation failed. Return code: {process.returncode}")
+                logger.error(f"STDOUT: {process.stdout}")
+                logger.error(f"STDERR: {process.stderr}")
+                return HttpResponse(process.stderr, status=500, content_type='text/plain')
+
+            # Read the generated PDF
+            pdf_filename = os.path.splitext(main_file.filename)[0] + '.pdf'
+            pdf_path = os.path.join(tmpdir, pdf_filename)
+            
+            if os.path.exists(pdf_path):
+                logger.info(f"PDF generated successfully: {pdf_path}")
+                with open(pdf_path, 'rb') as f:
+                    pdf_content = f.read()
+                
+                return HttpResponse(pdf_content, content_type='application/pdf')
             else:
-                return JsonResponse({"error": "Failed to generate PDF"}, status=500)
-
-        except subprocess.CalledProcessError as e:
-            # If pdflatex fails, return an error message
-            error_output = e.stderr.decode('utf-8')
-            return JsonResponse({"error": f"Error generating PDF: {error_output}"}, status=500)
+                logger.error(f"PDF not generated. Path does not exist: {pdf_path}")
+                return HttpResponse('PDF not generated', status=500, content_type='text/plain')
+    except Exception as e:
+        logger.exception(f"Unexpected error in compile_latex: {str(e)}")
+        return HttpResponse(f"An error occurred: {str(e)}\n\n{traceback.format_exc()}", status=500, content_type='text/plain')

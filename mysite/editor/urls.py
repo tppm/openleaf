@@ -7,7 +7,7 @@ urlpatterns = [
     path('editor/', views.editor_view, name='editor'),
     path('editor/<int:project_id>/', views.editor_view, name='editor'),
     path('create_project/', views.create_project, name='create_project'),
-    path('compile/<int:file_id>/', views.compile_latex, name='compile_latex'),
+    path('compile/<int:project_id>/', views.compile_latex, name='compile_latex'),
     path('save_file/<int:file_id>/', views.save_file, name='save_file'),
     path('get_file/<int:file_id>/', views.get_file, name='get_file'),
 ]
